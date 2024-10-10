@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Robot Remote</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+  <link rel="icon" type="image/png" href="/irobot64.png" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0"> 
+  <style>
+    body { margin: 0; padding: 0; touch-action: none; -moz-user-select: -moz-none; -webkit-user-select: none; user-select: none; }
+    #status { position: absolute; bottom: 0; z-index: 99; }
+    #mode { position: absolute; top: 0; line-height: 1.75em; z-index: 100; }
+    #mode.passive #passive, #mode.safe #safe, #mode.full #full { background: green; }
+    #mode span { border: 1px solid black; border-radius: 6px; cursor: pointer; padding: 3px 4px; margin: 0 2px; background: white; }
+    #target { margin: 0; padding: 0; position: absolute; background: url('target.png'); background-size: 100% 100%; }
+    #battery { position: absolute; z-index: 10; top: 0; right: 0; width: 1em; height: 1.75em; margin: 2px; background: no-repeat center/contain; }
+    #battery.charging::before {
+        position: absolute; z-index: 11; top: 0; left: 0; right: 0; bottom: 0;
+        background: url('charging.png') no-repeat center/contain;
+        content: "";
+    }
+    #battery.battery0, #battery.battery1 { background-image: url('battery1.png'); }
+    #battery.battery2 { background-image: url('battery2.png'); }
+    #battery.battery3 { background-image: url('battery3.png'); }
+    #battery.battery4 { background-image: url('battery4.png'); }
+    #battery.battery5 { background-image: url('battery5.png'); }
+    #battery.error::before {
+        content: "\26A0"; color: gold;
+        position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+        background-color: black; text-align: center;
+    }
+  </style>
+  <script>
+    let ws = null;
+    let status;
+    let target, mode;
+    let touch = null, prev_touch = null;
+
+    const mode_names = ['off', 'passive', 'safe', 'full'];
+    function clamp(x, min, max) { return x > max ? max : (x < min ? min : x); }
+
+    window.addEventListener('load', event => {
+        status = document.getElementById('status');
+        target = document.getElementById('target');
+        mode = document.getElementById('mode');
+
+        window.addEventListener('resize', update_display);
+        update_display();
+
+        document.addEventListener('touchstart', event => {
+            if (touch === null && event.touches.length === 1 && event.touches[0].target === target) {
+                event.preventDefault();
+                touch = event.touches[0];
+            }
+        }, {capture:false, passive:false});
+        document.addEventListener('touchmove', event => {
+            event.preventDefault();
+            find_touch_match(event.touches);
+        }, {capture:false, passive:false});
+        document.addEventListener('touchend', event => {
+            if (!find_touch_match(event.touches)) { touch = null; }
+        }, {capture:false});
+
+        setInterval(set_motors, 100);
+
+        for (let name of mode_names) {
+            if (name === 'off') { continue; }
+            document.getElementById(name).addEventListener('click', event => {
+                set_mode(event.currentTarget.id);
+            });
+        }
+
+        send_msg(null);
+    });
+
+    function send_msg(msg) {
+        if (Array.isArray(msg)) { msg = msg.join(' '); }
+        if (ws !== null && ws.readyState <= 1) {
+            if (msg !== null) { ws.send(msg); }
+        } else {
+            let loc = window.location;
+            ws = new WebSocket(((loc.protocol === "https:") ? "wss:" : "ws:") + "//" + loc.host + "/websocket");
+            if (msg !== null) { ws.onopen = event => { ws.send(msg); }; }
+            ws.onmessage = event => {
+                parts = event.data.split(' ');
+                if (parts[0] === 'status' && parts.length == 4) {
+                    update_status(parseInt(parts[1]), parseInt(parts[2]), parseFloat(parts[3]));
+                } else if (parts[0] === 'error' && parts.length == 1) {
+                    window.alert('There was an error communicating with the Roomba Robot. You may have to press the "Clean" button once to wake it up then touch one of the "Passive", "Safe" or "Full" buttons to connect.');
+                    update_status(0, 0, -1);
+                } else if (parts[0] !== 'dummy') {
+                    console.log('unknown message', parts);
+                }
+            };
+            ws.onclose = event => { ws = null; }
+        }
+    }
+
+    function find_touch_match(touches) {
+        if (touch === null) { return false; }
+        let found = false;
+        for (let te of touches) {
+            if (te.identifier === touch.identifier) {
+                touch = te;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function update_display() {
+        let w = document.documentElement.clientWidth, h = document.documentElement.clientHeight;
+        let sz = Math.round(Math.min(w, h)*.9);
+        target.style.width = sz + 'px';
+        target.style.height = sz + 'px';
+        target.style.top = (h - sz)/2 + 'px';
+        target.style.left = (w - sz)/2 + 'px';
+        mode.style.left = (w - mode.offsetWidth)/2 + 'px';
+    }
+
+    function update_status(mode_num, charging, battery_perc) {
+        mode.className = mode_names[mode_num];
+        if (battery_perc >= 0) {
+            let lvl = Math.ceil((1-Math.max(Math.min(battery_perc, 1), 0))/0.2);
+            battery.className = 'battery'+lvl;
+        } else {
+            battery.className = 'error';
+        }
+        if (charging === 5) {
+            battery.className += ' error';
+        } else if (charging >= 2 && charging <= 4) {
+            battery.className += ' charging';
+        }
+    }
+
+    function set_motors() {
+        if (touch != prev_touch) {
+            let x = 0, y = 0;
+            if (touch !== null) {
+                let sz = target.offsetWidth;
+                x = clamp((touch.clientX*2 - window.innerWidth)/sz, -1, 1);
+                y = clamp((window.innerHeight - touch.clientY*2)/sz, -1, 1);
+            }
+            status.innerText = x + ',' + y;
+            send_msg(['set_motor', x, y]);
+            prev_touch = touch;
+        }
+    }
+
+    function set_mode(name) {
+        send_msg(['set_mode', mode_names.indexOf(name)]);
+    }
+  </script>
+</head>
+<body>
+<div id="status"></div>
+<div id="mode">
+    <span id="passive">Passive</span>
+    <span id="safe">Safe</span>
+    <span id="full">Full</span>
+</div>
+<div id="battery"></div>
+<div id="target"></div>
+</body>
+</html>

@@ -1,0 +1,7 @@
+#!/bin/bash
+
+DIR=$(dirname "$(readlink -f "$0")")
+cd "$DIR"
+# TODO: look for in all parent directories for a virtualenv
+. bin/activate
+python3 remote.py --port=80
