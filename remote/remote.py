@@ -11,6 +11,23 @@ from collections import deque
 from math import pi
 from yarc import Roomba
 
+import io
+import time
+from picamera import PiCamera
+
+camera = PiCamera()
+camera.resolution = (640, 480)
+camera.rotation = 0
+
+time.sleep(2)
+
+image = io.BytesIO()
+camera.capture(image, 'jpeg')
+image.seek(0)
+
+with open('image.jpg', 'wb') as image_file:
+    image_file.write(image.read())
+
 define("port", type=int, default=8888, help="port to listen on")
 define("debug", type=bool, default=False, help="debug mode")
 define("usb_port", type=str, default='/dev/ttyUSB0', help='the USB port to use for the serial connection')

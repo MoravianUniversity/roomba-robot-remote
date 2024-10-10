@@ -5,7 +5,7 @@ From a clean Raspbian install do the following:
 ```bash
 sudo apt-get update
 sudo apt-get dist-upgrade
-sudo apt-get install virtualenv vim
+sudo apt-get install virtualenv vim git
 sudo apt-get purge plymouth*
 sudo apt-get autoremove
 
@@ -29,7 +29,7 @@ virtualenv -p `which python3` remote
 cd remote
 . bin/activate
 pip install tornado yarc 
-# TODO: git clone ... && cd ...
+git clone https://github.com/MoravianUniversity/roomba-robot-remote.git && cd roomba-robot-remote/remote
 ./remote.py
 ```
 
@@ -45,6 +45,8 @@ The program will run as root on port 80 with this method.
 
 Adapted from <https://www.raspberrypi.org/documentation/linux/usage/systemd.md>
 
+- systemd working directly for service
+
 ```bash
 sudo tee /etc/systemd/system/roomba-remote.service <<EOF
 [Unit]
@@ -52,8 +54,9 @@ Description=Roomba Remote Server
 Requires=network.target
 
 [Service]
+WorkingDirectory=$HOME/remote/roomba-robot-remote/remote
 Type=simple
-ExecStart=/home/pi/remote/run_remote_server --port=80
+ExecStart=$HOME/remote/bin/python3 remote.py --port=80
 Restart=always
 
 [Install]
